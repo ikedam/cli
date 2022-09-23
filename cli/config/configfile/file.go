@@ -256,9 +256,9 @@ func mapBind(bind, sourcePrefix, destPrefix string) string {
 	case '/':
 		// can be simply replaced.
 		if destPrefixEnd == '/' {
-			return destPrefix + "/" + rest
+			return destPrefix + rest
 		}
-		return destPrefix + rest
+		return destPrefix + "/" + rest
 	case '\\':
 		// Need to be the path separator "\\" in the rest of the source path must be replaced to "/".
 		{
@@ -268,9 +268,9 @@ func mapBind(bind, sourcePrefix, destPrefix string) string {
 				return ""
 			}
 			if destPrefixEnd == '/' {
-				return destPrefix + filepath.ToSlash(arr[0]) + ":" + arr[1]
+				return destPrefix + strings.ReplaceAll(arr[0], "\\", "/") + ":" + arr[1]
 			}
-			return destPrefix + "/" + filepath.ToSlash(arr[0]) + ":" + arr[1]
+			return destPrefix + "/" + strings.ReplaceAll(arr[0], "\\", "/") + ":" + arr[1]
 		}
 	}
 
@@ -300,9 +300,10 @@ func mapBind(bind, sourcePrefix, destPrefix string) string {
 				return ""
 			}
 			if destPrefixEnd == '/' {
-				return destPrefix + filepath.ToSlash(arr[0][1:]) + ":" + arr[1]
+				// skip the first \
+				return destPrefix + strings.ReplaceAll(arr[0][1:], "\\", "/") + ":" + arr[1]
 			}
-			return destPrefix + filepath.ToSlash(arr[0]) + ":" + arr[1]
+			return destPrefix + strings.ReplaceAll(arr[0], "\\", "/") + ":" + arr[1]
 		}
 	}
 
