@@ -257,9 +257,8 @@ func mapBind(bind, sourcePrefix, destPrefix string) string {
 		// can be simply replaced.
 		if destPrefixEnd == '/' {
 			return destPrefix + "/" + rest
-		} else {
-			return destPrefix + rest
 		}
+		return destPrefix + rest
 	case '\\':
 		// Need to be the path separator "\\" in the rest of the source path must be replaced to "/".
 		{
@@ -270,13 +269,12 @@ func mapBind(bind, sourcePrefix, destPrefix string) string {
 			}
 			if destPrefixEnd == '/' {
 				return destPrefix + filepath.ToSlash(arr[0]) + ":" + arr[1]
-			} else {
-				return destPrefix + "/" + filepath.ToSlash(arr[0]) + ":" + arr[1]
 			}
+			return destPrefix + "/" + filepath.ToSlash(arr[0]) + ":" + arr[1]
 		}
 	}
 
-	// if the sourcePrefix doesn't end with a path seperator (/ or \\),
+	// if the sourcePrefix doesn't end with a path separator (/ or \\),
 	// unexpected matchings like this should be ignored:
 	// * sourcePrefix: /path/to/somewhere
 	// * bind: /path/to/somewhereelse:/workspace
@@ -290,9 +288,8 @@ func mapBind(bind, sourcePrefix, destPrefix string) string {
 		// can be simply replaced.
 		if destPrefixEnd == '/' {
 			return destPrefix + rest[1:] // skip the first /
-		} else {
-			return destPrefix + rest
 		}
+		return destPrefix + rest
 	case '\\':
 		// considered "C:\windows\sourcepath\...:/containerpath".
 		// Need to be the path separator "\\" in the rest must be replaced to "/".
@@ -304,9 +301,8 @@ func mapBind(bind, sourcePrefix, destPrefix string) string {
 			}
 			if destPrefixEnd == '/' {
 				return destPrefix + filepath.ToSlash(arr[0][1:]) + ":" + arr[1]
-			} else {
-				return destPrefix + filepath.ToSlash(arr[0]) + ":" + arr[1]
 			}
+			return destPrefix + filepath.ToSlash(arr[0]) + ":" + arr[1]
 		}
 	}
 
