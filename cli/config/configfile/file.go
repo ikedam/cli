@@ -42,6 +42,7 @@ type ConfigFile struct {
 	CLIPluginsExtraDirs  []string                     `json:"cliPluginsExtraDirs,omitempty"`
 	Plugins              map[string]map[string]string `json:"plugins,omitempty"`
 	Aliases              map[string]string            `json:"aliases,omitempty"`
+	BindMaps             map[string]map[string]string `json:"bindMaps,omitempty"`
 }
 
 // ProxyConfig contains proxy configuration settings
@@ -210,6 +211,104 @@ func (configFile *ConfigFile) ParseProxyConfig(host string, runOpts map[string]*
 		}
 	}
 	return m
+}
+
+// ApplyBindMap updates bind mount options in-place with `bindMap` configurations
+func (configFile *ConfigFile) ApplyBindMap(host string, binds []string) []string {
+	maps, ok := configFile.BindMaps[host]
+	if !ok {
+		maps = configFile.BindMaps["default"]
+	}
+	if len(maps) == 0 {
+		return binds
+	}
+	for index, bind := range binds {
+		for sourcePrefix, destPrefix := range maps {
+			newBind := mapBind(bind, sourcePrefix, destPrefix)
+			if newBind != "" {
+				binds[index] = newBind
+				break
+			}
+		}
+	}
+	return binds
+}
+
+func mapBind(bind, sourcePrefix, destPrefix string) string {
+	if len(sourcePrefix) == 0 || len(destPrefix) == 0 {
+		return ""
+	}
+
+	// `bind` may contain Windows drive letter like: "C:\\path\\to\\hogehoge:/workspace".
+	// so don't split with ":" here, but replace first.
+	if !strings.HasPrefix(bind, sourcePrefix) {
+		return ""
+	}
+
+	// Replace sourcePrefix with destPrefix.
+	// Note: destPrefix is assumed Unix-like paths here.
+	rest := bind[len(sourcePrefix):]
+
+	sourcePrefixEnd := sourcePrefix[len(sourcePrefix)-1]
+	destPrefixEnd := destPrefix[len(destPrefix)-1]
+
+	switch sourcePrefixEnd {
+	case '/':
+		// can be simply replaced.
+		if destPrefixEnd == '/' {
+			return destPrefix + rest
+		}
+		return destPrefix + "/" + rest
+	case '\\':
+		// Need to be the path separator "\\" in the rest of the source path must be replaced to "/".
+		{
+			arr := strings.SplitN(rest, ":", 2)
+			if len(arr) < 2 {
+				// something strange. Ignore.
+				return ""
+			}
+			if destPrefixEnd == '/' {
+				return destPrefix + strings.ReplaceAll(arr[0], "\\", "/") + ":" + arr[1]
+			}
+			return destPrefix + "/" + strings.ReplaceAll(arr[0], "\\", "/") + ":" + arr[1]
+		}
+	}
+
+	// if the sourcePrefix doesn't end with a path separator (/ or \\),
+	// unexpected matchings like this should be ignored:
+	// * sourcePrefix: /path/to/somewhere
+	// * bind: /path/to/somewhereelse:/workspace
+	switch rest[0] {
+	case ':':
+		// considered "/sourcepath:/containerpath".
+		// can be simply replaced.
+		return destPrefix + rest
+	case '/':
+		// considered "/sourcepath/...:/containerpath".
+		// can be simply replaced.
+		if destPrefixEnd == '/' {
+			return destPrefix + rest[1:] // skip the first /
+		}
+		return destPrefix + rest
+	case '\\':
+		// considered "C:\windows\sourcepath\...:/containerpath".
+		// Need to be the path separator "\\" in the rest must be replaced to "/".
+		{
+			arr := strings.SplitN(rest, ":", 2)
+			if len(arr) < 2 {
+				// something strange. Ignore.
+				return ""
+			}
+			if destPrefixEnd == '/' {
+				// skip the first \
+				return destPrefix + strings.ReplaceAll(arr[0][1:], "\\", "/") + ":" + arr[1]
+			}
+			return destPrefix + strings.ReplaceAll(arr[0], "\\", "/") + ":" + arr[1]
+		}
+	}
+
+	// considered unexpected match.
+	return ""
 }
 
 // encodeAuth creates a base64 encoded string to containing authorization information
