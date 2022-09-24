@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/docker/cli/cli/config/credentials"
@@ -557,4 +558,248 @@ func TestPluginConfig(t *testing.T) {
 	cfg, err = os.ReadFile("test-plugin2")
 	assert.NilError(t, err)
 	golden.Assert(t, string(cfg), "plugin-config-2.golden")
+}
+
+func TestMapBind(t *testing.T) {
+	testcases := []struct {
+		name         string
+		bind         string
+		sourcePrefix string
+		destPrefix   string
+		expected     string
+	}{
+		{
+			name:         "empty sourcePrefix",
+			bind:         "/hostpath:/containerpath",
+			sourcePrefix: "",
+			destPrefix:   "/replaced",
+			expected:     "",
+		},
+		{
+			name:         "empty destPrefix",
+			bind:         "/hostpath:/containerpath",
+			sourcePrefix: "/hostpath",
+			destPrefix:   "",
+			expected:     "",
+		},
+		{
+			name:         "unmatched",
+			bind:         "/hostpath:/containerpath",
+			sourcePrefix: "/anotherpath",
+			destPrefix:   "/replaced",
+			expected:     "",
+		},
+		{
+			name:         "source: unix, terminated / dest: unix, terminated / partial",
+			bind:         "/hostpath/sub/dir:/containerpath",
+			sourcePrefix: "/hostpath/",
+			destPrefix:   "/replaced/",
+			expected:     "/replaced/sub/dir:/containerpath",
+		},
+		{
+			name:         "source: unix, terminated / dest: unix, unterminated / partial",
+			bind:         "/hostpath/sub/dir:/containerpath",
+			sourcePrefix: "/hostpath/",
+			destPrefix:   "/replaced",
+			expected:     "/replaced/sub/dir:/containerpath",
+		},
+		{
+			name:         "source: unix, terminated / dest: unix, terminated / full",
+			bind:         "/hostpath/sub/dir/:/containerpath",
+			sourcePrefix: "/hostpath/sub/dir/",
+			destPrefix:   "/replaced/",
+			expected:     "/replaced/:/containerpath",
+		},
+		{
+			name:         "source: unix, terminated / dest: unix, unterminated / full",
+			bind:         "/hostpath/sub/dir/:/containerpath",
+			sourcePrefix: "/hostpath/sub/dir/",
+			destPrefix:   "/replaced",
+			expected:     "/replaced/:/containerpath",
+		},
+		{
+			name:         "source: windows, terminated / dest: unix, terminated / partial",
+			bind:         "C:\\hostpath\\sub\\dir:/containerpath",
+			sourcePrefix: "C:\\hostpath\\",
+			destPrefix:   "/replaced/",
+			expected:     "/replaced/sub/dir:/containerpath",
+		},
+		{
+			name:         "source: windows, terminated / dest: unix, unterminated / partial",
+			bind:         "C:\\hostpath\\sub\\dir:/containerpath",
+			sourcePrefix: "C:\\hostpath\\",
+			destPrefix:   "/replaced",
+			expected:     "/replaced/sub/dir:/containerpath",
+		},
+		{
+			name:         "source: windows, terminated / dest: unix, terminated / full",
+			bind:         "C:\\hostpath\\sub\\dir\\:/containerpath",
+			sourcePrefix: "C:\\hostpath\\sub\\dir\\",
+			destPrefix:   "/replaced/",
+			expected:     "/replaced/:/containerpath",
+		},
+		{
+			name:         "source: windows, terminated / dest: unix, unterminated / full",
+			bind:         "C:\\hostpath\\sub\\dir\\:/containerpath",
+			sourcePrefix: "C:\\hostpath\\sub\\dir\\",
+			destPrefix:   "/replaced",
+			expected:     "/replaced/:/containerpath",
+		},
+		{
+			name:         "source: windows, terminated / invalid bind",
+			bind:         "C:\\hostpath\\sub\\dir\\",
+			sourcePrefix: "C:\\hostpath\\sub\\dir\\",
+			destPrefix:   "/replaced",
+			expected:     "",
+		},
+		{
+			name:         "source: windows, terminated / preserves option",
+			bind:         "C:\\hostpath\\sub\\dir\\:/containerpath:ro",
+			sourcePrefix: "C:\\hostpath\\sub\\dir\\",
+			destPrefix:   "/replaced",
+			expected:     "/replaced/:/containerpath:ro",
+		},
+		{
+			name:         "source: unix, unterminated / dest: unix, terminated / full",
+			bind:         "/hostpath:/containerpath",
+			sourcePrefix: "/hostpath",
+			destPrefix:   "/replaced/",
+			expected:     "/replaced/:/containerpath",
+		},
+		{
+			name:         "source: unix, unterminated / dest: unix, unterminated / full",
+			bind:         "/hostpath:/containerpath",
+			sourcePrefix: "/hostpath",
+			destPrefix:   "/replaced",
+			expected:     "/replaced:/containerpath",
+		},
+		{
+			name:         "source: unix, unterminated / dest: unix, terminated / partial",
+			bind:         "/hostpath/sub/dir:/containerpath",
+			sourcePrefix: "/hostpath",
+			destPrefix:   "/replaced/",
+			expected:     "/replaced/sub/dir:/containerpath",
+		},
+		{
+			name:         "source: unix, unterminated / dest: unix, unterminated / partial",
+			bind:         "/hostpath/sub/dir:/containerpath",
+			sourcePrefix: "/hostpath",
+			destPrefix:   "/replaced",
+			expected:     "/replaced/sub/dir:/containerpath",
+		},
+		{
+			name:         "source: windows, unterminated / dest: unix, terminated / partial",
+			bind:         "C:\\hostpath\\sub\\dir:/containerpath",
+			sourcePrefix: "C:\\hostpath",
+			destPrefix:   "/replaced/",
+			expected:     "/replaced/sub/dir:/containerpath",
+		},
+		{
+			name:         "source: windows, unterminated / dest: unix, unterminated / partial",
+			bind:         "C:\\hostpath\\sub\\dir:/containerpath",
+			sourcePrefix: "C:\\hostpath",
+			destPrefix:   "/replaced",
+			expected:     "/replaced/sub/dir:/containerpath",
+		},
+		{
+			name:         "source: windows, unterminated / invalid bind",
+			bind:         "C:\\hostpath\\sub\\dir",
+			sourcePrefix: "C:\\hostpath",
+			destPrefix:   "/replaced/",
+			expected:     "",
+		},
+		{
+			name:         "source: windows, unterminated / preserves option",
+			bind:         "C:\\hostpath\\sub\\dir:/containerpath:ro",
+			sourcePrefix: "C:\\hostpath",
+			destPrefix:   "/replaced/",
+			expected:     "/replaced/sub/dir:/containerpath:ro",
+		},
+		{
+			name:         "matched with non-separator boundary",
+			bind:         "/hostpath/sub/dir:/containerpath",
+			sourcePrefix: "/host",
+			destPrefix:   "/replaced/",
+			expected:     "",
+		},
+	}
+	for _, testcase := range testcases {
+		t.Run(testcase.name, func(t *testing.T) {
+			actual := mapBind(testcase.bind, testcase.sourcePrefix, testcase.destPrefix)
+			assert.Equal(t, testcase.expected, actual)
+		})
+	}
+}
+
+func TestApplyBindMap(t *testing.T) {
+	testcases := []struct {
+		name       string
+		configData string
+		host       string
+		binds      []string
+		expected   []string
+	}{
+		{
+			name:       "no configuration",
+			configData: "{}",
+			host:       "/var/run/docker.sock",
+			binds: []string{
+				"/home/user1/data:/workspace",
+				"/home/user2/data:/workspace",
+			},
+			expected: []string{
+				"/home/user1/data:/workspace",
+				"/home/user2/data:/workspace",
+			},
+		},
+		{
+			name: "host matched",
+			configData: `{"bindMaps": {
+				"default": {
+					"/home/user1":"/mnt/server1/user1"
+				},
+				"/var/run/docker.sock": {
+					"/home/user2":"/mnt/server2/user2"
+				}
+			}}`,
+			host: "/var/run/docker.sock",
+			binds: []string{
+				"/home/user1/data:/workspace",
+				"/home/user2/data:/workspace",
+			},
+			expected: []string{
+				"/home/user1/data:/workspace",
+				"/mnt/server2/user2/data:/workspace",
+			},
+		},
+		{
+			name: "host unmatched",
+			configData: `{"bindMaps": {
+				"default": {
+					"/home/user1":"/mnt/server1/user1"
+				},
+				"/var/run/docker.sock": {
+					"/home/user2":"/mnt/server2/user2"
+				}
+			}}`,
+			host: "tcp://127.0.0.1:2375",
+			binds: []string{
+				"/home/user1/data:/workspace",
+				"/home/user2/data:/workspace",
+			},
+			expected: []string{
+				"/mnt/server1/user1/data:/workspace",
+				"/home/user2/data:/workspace",
+			},
+		},
+	}
+	for _, testcase := range testcases {
+		t.Run(testcase.name, func(t *testing.T) {
+			config := New("config.json")
+			assert.NilError(t, config.LoadFromReader(strings.NewReader(testcase.configData)))
+			// Note: testcase.binds will be modified in-place.
+			actual := config.ApplyBindMap(testcase.host, testcase.binds)
+			assert.DeepEqual(t, testcase.expected, actual)
+		})
+	}
 }
